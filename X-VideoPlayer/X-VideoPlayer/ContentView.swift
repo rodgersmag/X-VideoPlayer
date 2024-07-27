@@ -5,9 +5,11 @@
 //  Created by rodgers magabo on 27/07/2024.
 //
 
+
+
 import SwiftUI
 import AVKit
-import PhotosUI
+
 
 
 struct ContentView: View {
@@ -16,7 +18,7 @@ struct ContentView: View {
     @State private var isFullScreen = false
     @State private var selectedVideo: Video?
     @State private var player = AVPlayer()
-  
+    @State private var playerTime: CMTime = .zero
     
     var body: some View {
         NavigationStack{
@@ -27,13 +29,12 @@ struct ContentView: View {
                          
                                 VideoCell(video: video, player: $player, isFullScreen: $isFullScreen, selectedVideo: $selectedVideo)
                                   
-                                VStack{
+                            VStack(alignment: .leading) {
                                     Text(video.user.name)
                                         .font(.subheadline)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Text(video.url)
                                         .font(.caption)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+
                                 }
                                     
                      
@@ -47,7 +48,7 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .heroFullScreenCover(show: $isFullScreen) {
                 if let video = selectedVideo {
-                    FeedCell(video: video, player: $player, isFullScreen: $isFullScreen)
+                    FeedCell(video: video, player: $player, isFullScreen: $isFullScreen, playerTime: $playerTime)
                 }
             }
             .onAppear {
@@ -327,7 +328,7 @@ struct VideoCell: View {
         } label: {
             VStack {
 
-                VideoPreview(player: $player, video: video, height: 400)
+                VideoPreview(player: $player, video: video, height: 300)
             }
                 
             
@@ -344,6 +345,8 @@ struct FeedCell: View {
     let video: Video
     @Binding var player: AVPlayer
     @Binding var isFullScreen: Bool
+    @Binding var playerTime: CMTime
+    
 
     var body: some View {
         ZStack {
@@ -370,10 +373,11 @@ struct FeedCell: View {
             }
         }
         .onAppear {
+            player.seek(to: playerTime)
             player.play()
         }
         .onDisappear {
-            player.pause()
+            playerTime = player.currentTime()
         }
         .gesture(
             DragGesture()
@@ -393,7 +397,7 @@ struct VideoPreview: View {
     var height: CGFloat?
 
     @State private var isMuted: Bool = false
-    @State private var videoTime: String = "00:00"
+    @State private var videoTime: String = ""
     @State private var timeObserverToken: Any? = nil
 
     var body: some View {
@@ -407,11 +411,8 @@ struct VideoPreview: View {
                             player.play()
                             addPeriodicTimeObserver()
                         } else {
-                            // Handle the case where the link is nil or the URL initialization fails
                             print("Invalid URL or link is nil")
-                            // You may want to add more robust error handling here, such as showing an alert to the user
                         }
-
                     }
                     .onDisappear {
                         player.pause()
@@ -424,19 +425,19 @@ struct VideoPreview: View {
                 HStack {
                     Text(videoTime)
                         .foregroundColor(.white)
-                        .padding(.leading, 10)
+                        .font(.subheadline)
+                        .opacity(videoTime.isEmpty ? 0 : 1)
                     
                     Spacer()
                     
                     Button(action: toggleMute) {
                         Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                             .foregroundColor(.white)
+                            .font(.subheadline)
                     }
-                    .padding(.trailing, 10)
                 }
                 .padding()
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal)
             }
         }
         .frame(height: height ?? 350)
@@ -449,19 +450,24 @@ struct VideoPreview: View {
 
     private func addPeriodicTimeObserver() {
         removePeriodicTimeObserver()
-
         let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-            if let duration = player.currentItem?.duration {
-                let totalSeconds = CMTimeGetSeconds(duration)
-                let currentSeconds = CMTimeGetSeconds(time)
-                if !totalSeconds.isNaN && !totalSeconds.isInfinite && !currentSeconds.isNaN && !currentSeconds.isInfinite {
-                    let remainingTime = totalSeconds - currentSeconds
-                    videoTime = formatTime(seconds: remainingTime)
-                } else {
-                    videoTime = "00:00"
-                }
+            updateVideoTime(currentTime: time)
+        }
+    }
+
+    private func updateVideoTime(currentTime: CMTime) {
+        if let duration = player.currentItem?.duration {
+            let totalSeconds = CMTimeGetSeconds(duration)
+            let currentSeconds = CMTimeGetSeconds(currentTime)
+            let remainingSeconds = totalSeconds - currentSeconds
+            if remainingSeconds > 0 && !remainingSeconds.isNaN && !remainingSeconds.isInfinite {
+                videoTime = formatTime(seconds: remainingSeconds)
+            } else {
+                videoTime = "00:00"
             }
+        } else {
+            videoTime = "00:00"
         }
     }
 
@@ -486,3 +492,5 @@ struct VideoPreview: View {
         }
     }
 }
+
+

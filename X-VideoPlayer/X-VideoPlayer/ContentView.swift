@@ -5,12 +5,8 @@
 //  Created by rodgers magabo on 27/07/2024.
 //
 
-
-
 import SwiftUI
 import AVKit
-
-
 
 struct ContentView: View {
     @ObservedObject var viewModel = VideoViewModel()

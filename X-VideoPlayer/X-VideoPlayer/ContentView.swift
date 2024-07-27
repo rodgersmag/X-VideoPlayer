@@ -6,28 +6,53 @@
 //
 
 import SwiftUI
+import AVKit
+import PhotosUI
+
 
 struct ContentView: View {
     @ObservedObject var viewModel = VideoViewModel()
+    // State for full-screen mode and the currently selected video
+    @State private var isFullScreen = false
+    @State private var selectedVideo: Video?
+    @State private var player = AVPlayer()
+  
     
     var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack {
-                ForEach(viewModel.videos) { video in
-                    VStack(alignment: .leading) {
-                        Text(video.user.name)
-                            .font(.headline)
-                        Text(video.url)
-                            .font(.subheadline)
-                        AsyncImage(url: URL(string: video.image))
-                            .frame(width: 100, height: 100)
+        NavigationStack{
+            ScrollView(.vertical) {
+                LazyVStack {
+                    ForEach(viewModel.videos) { video in
+                        VStack(alignment: .leading, spacing: 10) {
+                         
+                                VideoCell(video: video, player: $player, isFullScreen: $isFullScreen, selectedVideo: $selectedVideo)
+                                  
+                                VStack{
+                                    Text(video.user.name)
+                                        .font(.subheadline)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(video.url)
+                                        .font(.caption)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                    
+                     
+                     
+                        }
+                        .padding()
                     }
-                    .padding()
                 }
             }
-        }
-        .onAppear {
-            viewModel.fetchVideos()
+            .navigationTitle("X - Video player ")
+            .navigationBarTitleDisplayMode(.inline)
+            .heroFullScreenCover(show: $isFullScreen) {
+                if let video = selectedVideo {
+                    FeedCell(video: video, player: $player, isFullScreen: $isFullScreen)
+                }
+            }
+            .onAppear {
+                viewModel.fetchVideos()
+            }
         }
     }
 }
@@ -111,3 +136,353 @@ class VideoViewModel: ObservableObject {
 }
 
 
+struct VideoPickerTransferable: Transferable {
+    let videoURL: URL
+    
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { exportingFile in
+            return .init(exportingFile.videoURL)
+        } importing: { receivedTransferredFile in
+            let originalFile = receivedTransferredFile.file
+            let copiedFile = URL.documentsDirectory.appending(path: "videoPicker.mov")
+            
+            if FileManager.default.fileExists(atPath: copiedFile.path()) {
+                try FileManager.default.removeItem(at: copiedFile)
+            }
+            
+            try FileManager.default.copyItem(at: originalFile, to: copiedFile)
+            return .init(videoURL: copiedFile)
+        }
+    }
+}
+
+struct ImagePickerTransferable: Transferable {
+    let image: UIImage
+    
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .image) { data in
+            guard let uiImage = UIImage(data: data) else {
+                throw TransferError.importFailed
+            }
+            return ImagePickerTransferable(image: uiImage)
+        }
+    }
+    
+    enum TransferError: Error {
+        case importFailed
+    }
+}
+
+struct FullScreenPlayer: UIViewControllerRepresentable {
+    var player: AVPlayer
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let playerViewController = AVPlayerViewController()
+        playerViewController.player = player
+        playerViewController.entersFullScreenWhenPlaybackBegins = true
+//        playerViewController.exitsFullScreenWhenPlaybackEnds = true
+//        playerViewController.allowsPictureInPicturePlayback = true
+//        playerViewController.showsPlaybackControls = false
+        playerViewController.allowsVideoFrameAnalysis = false
+//        playerViewController.videoGravity = .resizeAspectFill
+        return playerViewController
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+//        uiViewController.player = player
+    }
+}
+
+struct PreviewScreenVideoPlayer: UIViewControllerRepresentable {
+    
+    
+    var player: AVPlayer
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let playerViewController = AVPlayerViewController()
+        playerViewController.player = player
+//        playerViewController.entersFullScreenWhenPlaybackBegins = true
+//        playerViewController.exitsFullScreenWhenPlaybackEnds = true
+//        playerViewController.allowsPictureInPicturePlayback = true
+        
+        playerViewController.showsPlaybackControls = false
+        playerViewController.videoGravity = .resizeAspectFill
+        return playerViewController
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+//        uiViewController.player = player
+    }
+    
+   
+
+
+    
+}
+
+
+
+extension View {
+    @ViewBuilder
+    func heroFullScreenCover<Content: View>(show: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+        self
+            .modifier(HelperHeroView(show: show, overlay: content()))
+    }
+}
+
+fileprivate struct HelperHeroView<Overlay: View>: ViewModifier {
+    @Binding var show: Bool
+    var overlay: Overlay
+    @State private var hostView: CustomHostingView<Overlay>?
+    @State private var parentController: UIViewController?
+    
+    func body(content: Content) -> some View {
+        content
+            .background {
+                ExtractSwiftUIParentController(content: overlay, hostView: $hostView) { viewController in
+                    parentController = viewController
+                }
+            }
+            .onAppear {
+                hostView = CustomHostingView(rootView: overlay, show: $show)
+            }
+            .onChange(of: show) { _, newValue in
+                if newValue {
+                    if let hostView {
+                        hostView.modalPresentationStyle = .overFullScreen
+                        hostView.modalTransitionStyle = .crossDissolve
+                        hostView.view.backgroundColor = .clear
+                        parentController?.present(hostView, animated: false)
+                    }
+                } else {
+                    hostView?.dismiss(animated: false)
+                }
+            }
+    }
+}
+
+fileprivate struct ExtractSwiftUIParentController<Content: View>: UIViewRepresentable {
+    var content: Content
+    @Binding var hostView: CustomHostingView<Content>?
+    var parentController: (UIViewController?) -> ()
+    
+    func makeUIView(context: Context) -> UIView {
+        return UIView()
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+        hostView?.rootView = content
+        DispatchQueue.main.async {
+            parentController(uiView.superview?.superview?.parentController)
+        }
+    }
+}
+
+class CustomHostingView<Content: View>: UIHostingController<Content> {
+    @Binding var show: Bool
+    
+    init(rootView: Content, show: Binding<Bool>) {
+        self._show = show
+        super.init(rootView: rootView)
+    }
+    
+    required dynamic init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(false)
+        show = false
+    }
+}
+
+extension UIView {
+    var parentController: UIViewController? {
+        var responder = self.next
+        while responder != nil {
+            if let viewController = responder as? UIViewController {
+                return viewController
+            }
+            responder = responder?.next
+        }
+        return nil
+    }
+}
+
+
+struct VideoCell: View {
+    let video: Video
+    @Binding var player: AVPlayer
+    @Binding var isFullScreen: Bool
+    @Binding var selectedVideo: Video?
+    @ObservedObject var viewModel = VideoViewModel()
+    
+    @State private var playerTime: CMTime = .zero
+    
+    var body: some View {
+        Button {
+            selectedVideo = video
+            playerTime = player.currentTime()
+            isFullScreen = true
+        } label: {
+            VStack {
+
+                VideoPreview(player: $player, video: video, height: 400)
+            }
+                
+            
+            }
+        .buttonStyle(.plain)
+            
+        }
+        
+    }
+
+
+struct FeedCell: View {
+    @Environment(\.dismiss) var dismiss
+    let video: Video
+    @Binding var player: AVPlayer
+    @Binding var isFullScreen: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            FullScreenPlayer(player: player)
+                .containerRelativeFrame([.horizontal, .vertical])
+            
+            VStack {
+                HStack {
+                    Button(action: {
+                        isFullScreen = false
+                        dismiss()
+                    }) {
+                        Image(systemName: "arrow.left")
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(.clear)
+                            .clipShape(Circle())
+                    }
+                    Spacer()
+                }
+                
+                Spacer()
+            }
+        }
+        .onAppear {
+            player.play()
+        }
+        .onDisappear {
+            player.pause()
+        }
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    if value.translation.height > 50 {
+                        isFullScreen = false
+                        dismiss()
+                    }
+                }
+        )
+    }
+}
+
+struct VideoPreview: View {
+    @Binding var player: AVPlayer
+    var video: Video
+    var height: CGFloat?
+
+    @State private var isMuted: Bool = false
+    @State private var videoTime: String = "00:00"
+    @State private var timeObserverToken: Any? = nil
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                PreviewScreenVideoPlayer(player: player)
+                    .onAppear {
+                        if let link = video.video_files.first?.link, let url = URL(string: link) {
+                            let item = AVPlayerItem(url: url)
+                            player.replaceCurrentItem(with: item)
+                            player.play()
+                            addPeriodicTimeObserver()
+                        } else {
+                            // Handle the case where the link is nil or the URL initialization fails
+                            print("Invalid URL or link is nil")
+                            // You may want to add more robust error handling here, such as showing an alert to the user
+                        }
+
+                    }
+                    .onDisappear {
+                        player.pause()
+                        removePeriodicTimeObserver()
+                    }
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: height ?? 350)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                
+                HStack {
+                    Text(videoTime)
+                        .foregroundColor(.white)
+                        .padding(.leading, 10)
+                    
+                    Spacer()
+                    
+                    Button(action: toggleMute) {
+                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .foregroundColor(.white)
+                    }
+                    .padding(.trailing, 10)
+                }
+                .padding()
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal)
+            }
+        }
+        .frame(height: height ?? 350)
+    }
+    
+    private func toggleMute() {
+        isMuted.toggle()
+        player.isMuted = isMuted
+    }
+
+    private func addPeriodicTimeObserver() {
+        removePeriodicTimeObserver()
+
+        let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            if let duration = player.currentItem?.duration {
+                let totalSeconds = CMTimeGetSeconds(duration)
+                let currentSeconds = CMTimeGetSeconds(time)
+                if !totalSeconds.isNaN && !totalSeconds.isInfinite && !currentSeconds.isNaN && !currentSeconds.isInfinite {
+                    let remainingTime = totalSeconds - currentSeconds
+                    videoTime = formatTime(seconds: remainingTime)
+                } else {
+                    videoTime = "00:00"
+                }
+            }
+        }
+    }
+
+    private func removePeriodicTimeObserver() {
+        if let token = timeObserverToken {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+    }
+
+    private func formatTime(seconds: Double) -> String {
+        let hrs = Int(seconds) / 3600
+        let mins = (Int(seconds) % 3600) / 60
+        let secs = Int(seconds) % 60
+
+        if hrs > 0 {
+            return String(format: "%02d:%02d:%02d", hrs, mins, secs)
+        } else if mins > 0 {
+            return String(format: "%02d:%02d", mins, secs)
+        } else {
+            return String(format: "%02d", secs)
+        }
+    }
+}

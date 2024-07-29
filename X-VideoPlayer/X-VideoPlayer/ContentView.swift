@@ -383,13 +383,15 @@ struct FeedCell: View {
         }
         .onAppear {
             playerViewModel.loadVideo(from: video.video_files.first?.link) {
+                playerViewModel.toggleSound()
                 playerViewModel.player.seek(to: playerTime)
                 playerViewModel.player.play()
             }
         }
         .onDisappear {
             playerTime = playerViewModel.player.currentTime()
-            playerViewModel.player.pause()
+            playerViewModel.toggleSound()
+//            playerViewModel.player.pause()
         }
         .gesture(
             DragGesture()

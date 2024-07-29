@@ -130,6 +130,59 @@ struct VideoCell: View {
     }
 }
 
+//struct VideoPreview: View {
+//    let video: Video
+//    @ObservedObject var playerViewModel: PlayerViewModel
+//    var height: CGFloat?
+//    @Binding var currentlyPlayingVideoID: Int?
+//
+//    var body: some View {
+//        GeometryReader { geometry in
+//            ZStack(alignment: .bottom) {
+//                PreviewScreenVideoPlayer(player: playerViewModel.player)
+//                    .onAppear {
+//                        playerViewModel.loadVideo(from: video.video_files.first?.link)
+//                    }
+//                    .onDisappear {
+//                        playerViewModel.removePeriodicTimeObserver()
+//                    }
+//                    .scaledToFill()
+//                    .frame(width: geometry.size.width, height: height ?? 350)
+//                    .clipShape(RoundedRectangle(cornerRadius: 20))
+//
+//                HStack {
+//                    Text(playerViewModel.videoTime)
+//                        .foregroundColor(.white)
+//                        .font(.caption)
+//                        .padding(6)
+//                        .background(Color.black.opacity(0.2))
+//                        .clipShape(Capsule())
+//                        .opacity(playerViewModel.videoTime.isEmpty ? 0 : 1)
+//
+//                    Spacer()
+//
+//                    Button(action: playerViewModel.toggleMute) {
+//                        Image(systemName: playerViewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+//                            .foregroundColor(.white)
+//                            .font(.caption)
+//                            .padding(6)
+//                            .background(Color.black.opacity(0.2))
+//                            .clipShape(Circle())
+//                            .opacity(playerViewModel.videoTime.isEmpty ? 0 : 1)
+//                    }
+//                }
+//                .padding()
+//            }
+//        }
+//        .frame(height: height ?? 350)
+//    }
+//}
+
+
+import AVFoundation
+import SwiftUI
+import Combine
+
 struct VideoPreview: View {
     let video: Video
     @ObservedObject var playerViewModel: PlayerViewModel
@@ -161,8 +214,8 @@ struct VideoPreview: View {
 
                     Spacer()
 
-                    Button(action: playerViewModel.toggleMute) {
-                        Image(systemName: playerViewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    Button(action: playerViewModel.toggleSound) {
+                        Image(systemName: playerViewModel.isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
                             .foregroundColor(.white)
                             .font(.caption)
                             .padding(6)
@@ -178,6 +231,122 @@ struct VideoPreview: View {
     }
 }
 
+class PlayerViewModel: ObservableObject {
+    @Published var player = AVPlayer()
+    @Published var playerTime: CMTime = .zero
+    @Published var isSoundOn: Bool = false
+    @Published var videoTime: String = ""
+
+    private var timeObserverToken: Any?
+    private var cancellables = Set<AnyCancellable>()
+    private var audioSession: AVAudioSession
+
+    init() {
+        self.audioSession = AVAudioSession.sharedInstance()
+        setupAudioSession()
+    }
+
+    private func setupAudioSession() {
+        do {
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to set audio session category: \(error)")
+        }
+    }
+
+    func toggleSound() {
+        isSoundOn.toggle()
+        player.isMuted = !isSoundOn
+        if isSoundOn {
+            do {
+                try audioSession.setCategory(.playback, mode: .default)
+                try audioSession.setActive(true)
+            } catch {
+                print("Failed to activate audio session: \(error)")
+            }
+        } else {
+            do {
+                try audioSession.setCategory(.ambient, mode: .default)
+                try audioSession.setActive(true)
+            } catch {
+                print("Failed to deactivate audio session: \(error)")
+            }
+        }
+    }
+
+    func play() {
+        player.play()
+    }
+
+    func pause() {
+        player.pause()
+    }
+
+    func loadVideo(from urlString: String?, completion: (() -> Void)? = nil) {
+        guard let urlString = urlString, let url = URL(string: urlString) else {
+            print("Invalid video URL")
+            return
+        }
+
+        let asset = AVAsset(url: url)
+
+        Task {
+            do {
+                let isPlayable = try await asset.load(.isPlayable)
+                if isPlayable {
+                    let playerItem = AVPlayerItem(asset: asset)
+                    await MainActor.run {
+                        self.player.replaceCurrentItem(with: playerItem)
+                        self.addPeriodicTimeObserver()
+                        self.player.isMuted = !self.isSoundOn
+                        completion?()
+                    }
+                } else {
+                    print("Asset is not playable")
+                }
+            } catch {
+                print("Failed to load video: \(error)")
+            }
+        }
+    }
+
+    func addPeriodicTimeObserver() {
+        removePeriodicTimeObserver()
+        let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            self?.updateVideoTime(currentTime: time)
+        }
+    }
+
+    func removePeriodicTimeObserver() {
+        if let token = timeObserverToken {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+    }
+
+    private func updateVideoTime(currentTime: CMTime) {
+        if let duration = player.currentItem?.duration {
+            let totalSeconds = CMTimeGetSeconds(duration)
+            let currentSeconds = CMTimeGetSeconds(currentTime)
+            let remainingSeconds = totalSeconds - currentSeconds
+            if remainingSeconds > 0 && !remainingSeconds.isNaN && !remainingSeconds.isInfinite {
+                videoTime = formatTime(seconds: remainingSeconds)
+            } else {
+                videoTime = "00:00"
+            }
+        } else {
+            videoTime = "00:00"
+        }
+    }
+
+    private func formatTime(seconds: Double) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
+}
 
 // FeedCell.swift
 struct FeedCell: View {
@@ -266,91 +435,91 @@ struct PreviewScreenVideoPlayer: UIViewControllerRepresentable {
 }
 
 
-class PlayerViewModel: ObservableObject {
-    @Published var player = AVPlayer()
-    @Published var playerTime: CMTime = .zero
-    @Published var isMuted: Bool = false
-    @Published var videoTime: String = ""
-
-    private var timeObserverToken: Any?
-    private var cancellables = Set<AnyCancellable>()
-
-    func toggleMute() {
-        isMuted.toggle()
-        player.isMuted = isMuted
-    }
-
-    func play() {
-        player.play()
-    }
-
-    func pause() {
-        player.pause()
-    }
-
-    func loadVideo(from urlString: String?, completion: (() -> Void)? = nil) {
-        guard let urlString = urlString, let url = URL(string: urlString) else {
-            print("Invalid video URL")
-            return
-        }
-
-        let asset = AVAsset(url: url)
-
-        Task {
-            do {
-                let isPlayable = try await asset.load(.isPlayable)
-                if isPlayable {
-                    let playerItem = AVPlayerItem(asset: asset)
-                    await MainActor.run {
-                        self.player.replaceCurrentItem(with: playerItem)
-                        self.addPeriodicTimeObserver()
-                        completion?()
-                    }
-                } else {
-                    print("Asset is not playable")
-                }
-            } catch {
-                print("Failed to load video: \(error)")
-            }
-        }
-    }
-
-    func addPeriodicTimeObserver() {
-        removePeriodicTimeObserver()
-        let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            self?.updateVideoTime(currentTime: time)
-        }
-    }
-
-    func removePeriodicTimeObserver() {
-        if let token = timeObserverToken {
-            player.removeTimeObserver(token)
-            timeObserverToken = nil
-        }
-    }
-
-    private func updateVideoTime(currentTime: CMTime) {
-        if let duration = player.currentItem?.duration {
-            let totalSeconds = CMTimeGetSeconds(duration)
-            let currentSeconds = CMTimeGetSeconds(currentTime)
-            let remainingSeconds = totalSeconds - currentSeconds
-            if remainingSeconds > 0 && !remainingSeconds.isNaN && !remainingSeconds.isInfinite {
-                videoTime = formatTime(seconds: remainingSeconds)
-            } else {
-                videoTime = "00:00"
-            }
-        } else {
-            videoTime = "00:00"
-        }
-    }
-
-    private func formatTime(seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%02d:%02d", mins, secs)
-    }
-}
+//class PlayerViewModel: ObservableObject {
+//    @Published var player = AVPlayer()
+//    @Published var playerTime: CMTime = .zero
+//    @Published var isMuted: Bool = false
+//    @Published var videoTime: String = ""
+//
+//    private var timeObserverToken: Any?
+//    private var cancellables = Set<AnyCancellable>()
+//
+//    func toggleMute() {
+//        isMuted.toggle()
+//        player.isMuted = isMuted
+//    }
+//
+//    func play() {
+//        player.play()
+//    }
+//
+//    func pause() {
+//        player.pause()
+//    }
+//
+//    func loadVideo(from urlString: String?, completion: (() -> Void)? = nil) {
+//        guard let urlString = urlString, let url = URL(string: urlString) else {
+//            print("Invalid video URL")
+//            return
+//        }
+//
+//        let asset = AVAsset(url: url)
+//
+//        Task {
+//            do {
+//                let isPlayable = try await asset.load(.isPlayable)
+//                if isPlayable {
+//                    let playerItem = AVPlayerItem(asset: asset)
+//                    await MainActor.run {
+//                        self.player.replaceCurrentItem(with: playerItem)
+//                        self.addPeriodicTimeObserver()
+//                        completion?()
+//                    }
+//                } else {
+//                    print("Asset is not playable")
+//                }
+//            } catch {
+//                print("Failed to load video: \(error)")
+//            }
+//        }
+//    }
+//
+//    func addPeriodicTimeObserver() {
+//        removePeriodicTimeObserver()
+//        let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+//        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+//            self?.updateVideoTime(currentTime: time)
+//        }
+//    }
+//
+//    func removePeriodicTimeObserver() {
+//        if let token = timeObserverToken {
+//            player.removeTimeObserver(token)
+//            timeObserverToken = nil
+//        }
+//    }
+//
+//    private func updateVideoTime(currentTime: CMTime) {
+//        if let duration = player.currentItem?.duration {
+//            let totalSeconds = CMTimeGetSeconds(duration)
+//            let currentSeconds = CMTimeGetSeconds(currentTime)
+//            let remainingSeconds = totalSeconds - currentSeconds
+//            if remainingSeconds > 0 && !remainingSeconds.isNaN && !remainingSeconds.isInfinite {
+//                videoTime = formatTime(seconds: remainingSeconds)
+//            } else {
+//                videoTime = "00:00"
+//            }
+//        } else {
+//            videoTime = "00:00"
+//        }
+//    }
+//
+//    private func formatTime(seconds: Double) -> String {
+//        let mins = Int(seconds) / 60
+//        let secs = Int(seconds) % 60
+//        return String(format: "%02d:%02d", mins, secs)
+//    }
+//}
 
 
 // VideoVisibility.swift

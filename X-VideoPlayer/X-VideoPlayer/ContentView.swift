@@ -58,6 +58,7 @@ struct VideoListView: View {
                               isFullScreen: $isFullScreen,
                               selectedVideo: $selectedVideo,
                               currentlyPlayingVideoID: $currentlyPlayingVideoID)
+                    .padding(.bottom)
                         .background(
                             GeometryReader { geometry in
                                 Color.clear.preference(key: VideoVisibilityPreferenceKey.self,
@@ -129,7 +130,6 @@ struct VideoCell: View {
     }
 }
 
-// VideoPreview.swift
 struct VideoPreview: View {
     let video: Video
     @ObservedObject var playerViewModel: PlayerViewModel
@@ -153,7 +153,10 @@ struct VideoPreview: View {
                 HStack {
                     Text(playerViewModel.videoTime)
                         .foregroundColor(.white)
-                        .font(.subheadline)
+                        .font(.caption)
+                        .padding(6)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(Capsule())
                         .opacity(playerViewModel.videoTime.isEmpty ? 0 : 1)
 
                     Spacer()
@@ -161,7 +164,11 @@ struct VideoPreview: View {
                     Button(action: playerViewModel.toggleMute) {
                         Image(systemName: playerViewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                             .foregroundColor(.white)
-                            .font(.subheadline)
+                            .font(.caption)
+                            .padding(6)
+                            .background(Color.black.opacity(0.2))
+                            .clipShape(Circle())
+                            .opacity(playerViewModel.videoTime.isEmpty ? 0 : 1)
                     }
                 }
                 .padding()
@@ -170,6 +177,7 @@ struct VideoPreview: View {
         .frame(height: height ?? 350)
     }
 }
+
 
 // FeedCell.swift
 struct FeedCell: View {
@@ -250,6 +258,7 @@ struct PreviewScreenVideoPlayer: UIViewControllerRepresentable {
         playerViewController.player = player
         playerViewController.showsPlaybackControls = false
         playerViewController.videoGravity = .resizeAspectFill
+        playerViewController.allowsVideoFrameAnalysis = false
         return playerViewController
     }
 
@@ -342,6 +351,7 @@ class PlayerViewModel: ObservableObject {
         return String(format: "%02d:%02d", mins, secs)
     }
 }
+
 
 // VideoVisibility.swift
 struct VideoVisibility: Equatable {
@@ -523,186 +533,6 @@ extension UIView {
 }
 
 
-//struct VideoCell: View {
-//    let video: Video
-//    @Binding var player: AVPlayer
-//    @Binding var isFullScreen: Bool
-//    @Binding var selectedVideo: Video?
-//    @ObservedObject var viewModel = VideoViewModel()
-//    
-//    @State private var playerTime: CMTime = .zero
-//    
-//    var body: some View {
-//        Button {
-//            selectedVideo = video
-//            playerTime = player.currentTime()
-//            isFullScreen = true
-//        } label: {
-//            VStack {
-//
-//                VideoPreview(player: $player, video: video, height: 300)
-//            }
-//                
-//            
-//            }
-//        .buttonStyle(.plain)
-//            
-//        }
-//        
-//    }
-//
-//
-//struct FeedCell: View {
-//    @Environment(\.dismiss) var dismiss
-//    let video: Video
-//    @Binding var player: AVPlayer
-//    @Binding var isFullScreen: Bool
-//    @Binding var playerTime: CMTime
-//    
-//
-//    var body: some View {
-//        ZStack {
-//            Color.black.ignoresSafeArea()
-//            FullScreenPlayer(player: player)
-//                .containerRelativeFrame([.horizontal, .vertical])
-//            
-//            VStack {
-//                HStack {
-//                    Button(action: {
-//                        isFullScreen = false
-//                        dismiss()
-//                    }) {
-//                        Image(systemName: "arrow.left")
-//                            .foregroundColor(.white)
-//                            .padding()
-//                            .background(.clear)
-//                            .clipShape(Circle())
-//                    }
-//                    Spacer()
-//                }
-//                
-//                Spacer()
-//            }
-//        }
-//        .onAppear {
-//            player.seek(to: playerTime)
-//            player.play()
-//        }
-//        .onDisappear {
-//            playerTime = player.currentTime()
-//        }
-//        .gesture(
-//            DragGesture()
-//                .onEnded { value in
-//                    if value.translation.height > 50 {
-//                        isFullScreen = false
-//                        dismiss()
-//                    }
-//                }
-//        )
-//    }
-//}
-//
-//struct VideoPreview: View {
-//    @Binding var player: AVPlayer
-//    var video: Video
-//    var height: CGFloat?
-//
-//    @State private var isMuted: Bool = false
-//    @State private var videoTime: String = ""
-//    @State private var timeObserverToken: Any? = nil
-//
-//    var body: some View {
-//        GeometryReader { geometry in
-//            ZStack(alignment: .bottom) {
-//                PreviewScreenVideoPlayer(player: player)
-//                    .onAppear {
-//                        if let link = video.video_files.first?.link, let url = URL(string: link) {
-//                            let item = AVPlayerItem(url: url)
-//                            player.replaceCurrentItem(with: item)
-//                            player.play()
-//                            addPeriodicTimeObserver()
-//                        } else {
-//                            print("Invalid URL or link is nil")
-//                        }
-//                    }
-//                    .onDisappear {
-//                        player.pause()
-//                        removePeriodicTimeObserver()
-//                    }
-//                    .scaledToFill()
-//                    .frame(width: geometry.size.width, height: height ?? 350)
-//                    .clipShape(RoundedRectangle(cornerRadius: 20))
-//                
-//                HStack {
-//                    Text(videoTime)
-//                        .foregroundColor(.white)
-//                        .font(.subheadline)
-//                        .opacity(videoTime.isEmpty ? 0 : 1)
-//                    
-//                    Spacer()
-//                    
-//                    Button(action: toggleMute) {
-//                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-//                            .foregroundColor(.white)
-//                            .font(.subheadline)
-//                    }
-//                }
-//                .padding()
-//                .clipShape(RoundedRectangle(cornerRadius: 10))
-//            }
-//        }
-//        .frame(height: height ?? 350)
-//    }
-//    
-//    private func toggleMute() {
-//        isMuted.toggle()
-//        player.isMuted = isMuted
-//    }
-//
-//    private func addPeriodicTimeObserver() {
-//        removePeriodicTimeObserver()
-//        let interval = CMTime(seconds: 1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-//        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
-//            updateVideoTime(currentTime: time)
-//        }
-//    }
-//
-//    private func updateVideoTime(currentTime: CMTime) {
-//        if let duration = player.currentItem?.duration {
-//            let totalSeconds = CMTimeGetSeconds(duration)
-//            let currentSeconds = CMTimeGetSeconds(currentTime)
-//            let remainingSeconds = totalSeconds - currentSeconds
-//            if remainingSeconds > 0 && !remainingSeconds.isNaN && !remainingSeconds.isInfinite {
-//                videoTime = formatTime(seconds: remainingSeconds)
-//            } else {
-//                videoTime = "00:00"
-//            }
-//        } else {
-//            videoTime = "00:00"
-//        }
-//    }
-//
-//    private func removePeriodicTimeObserver() {
-//        if let token = timeObserverToken {
-//            player.removeTimeObserver(token)
-//            timeObserverToken = nil
-//        }
-//    }
-//
-//    private func formatTime(seconds: Double) -> String {
-//        let hrs = Int(seconds) / 3600
-//        let mins = (Int(seconds) % 3600) / 60
-//        let secs = Int(seconds) % 60
-//
-//        if hrs > 0 {
-//            return String(format: "%02d:%02d:%02d", hrs, mins, secs)
-//        } else if mins > 0 {
-//            return String(format: "%02d:%02d", mins, secs)
-//        } else {
-//            return String(format: "%02d", secs)
-//        }
-//    }
-//}
+
 
 

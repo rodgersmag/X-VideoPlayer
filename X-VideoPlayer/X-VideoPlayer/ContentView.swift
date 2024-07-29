@@ -13,9 +13,9 @@ import Combine
 // ContentView.swift
 struct ContentView: View {
     @StateObject var viewModel = VideoViewModel()
+    @StateObject private var playerViewModel = PlayerViewModel()
     @State private var isFullScreen = false
     @State private var selectedVideo: Video?
-    @State private var playerTime: CMTime = .zero
     @State private var currentlyPlayingVideoID: Int?
     @State private var videoVisibilities: [VideoVisibility] = []
 
@@ -33,9 +33,11 @@ struct ContentView: View {
                 .heroFullScreenCover(show: $isFullScreen) {
                     if let video = selectedVideo {
                         FullScreenView(video: video,
-                                 isFullScreen: $isFullScreen,
-                                 playerTime: $playerTime)
+                                       isFullScreen: $isFullScreen, selectedVideo: $selectedVideo)
+                       
                     }
+                    
+                    
                 }
                 .onAppear {
                     viewModel.fetchVideos()
@@ -126,10 +128,13 @@ struct VideoCell: View {
         .onChange(of: currentlyPlayingVideoID) { _, newID in
             if newID == video.id {
                 playerViewModel.play()
+                
             } else {
                 playerViewModel.pause()
+             
             }
         }
+     
     }
 }
 
@@ -305,7 +310,7 @@ struct FullScreenView: View {
     @Environment(\.dismiss) var dismiss
     let video: Video
     @Binding var isFullScreen: Bool
-    @Binding var playerTime: CMTime
+    @Binding var selectedVideo: Video?
 
     @StateObject private var playerViewModel = PlayerViewModel()
 
@@ -337,14 +342,15 @@ struct FullScreenView: View {
 
             playerViewModel.loadVideo(from: video.video_files.first?.link) {
                 playerViewModel.toggleSound()
-                playerViewModel.player.seek(to: playerTime)
+                playerViewModel.player.seek(to:  playerViewModel.playerTime)
                 playerViewModel.player.play()
             }
 
         }
         .onDisappear {
-            playerTime = playerViewModel.player.currentTime()
+            playerViewModel.playerTime = playerViewModel.player.currentTime()
             playerViewModel.toggleSound()
+            self.selectedVideo = nil
 
         }
         .gesture(
@@ -412,7 +418,7 @@ class VideoViewModel: ObservableObject {
     private let apiKey = "e0ovpfuqi7NS5i7gyyuVWVe0VLgjEJIYMnnCtrLmAWzzlGrKONzBzfTB"
 
     func fetchVideos() {
-        guard let url = URL(string: "https://api.pexels.com/videos/search?query=nature&per_page=15") else {
+        guard let url = URL(string: "https://api.pexels.com/videos/search?query=babies&per_page=15") else {
             print("Invalid URL")
             return
         }

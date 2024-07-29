@@ -1,5 +1,6 @@
 # X-VideoPlayer
 
+![](demo.gif)
 This X-VideoPlayer features a video player with a list of videos fetched from an API. The app supports full-screen playback, video previews, and dynamic updating of the currently playing video based on visibility. inspired by the video player from X but still has some minor bugs. 
 
 Features

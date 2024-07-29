@@ -3,7 +3,7 @@
 ![](demo2.gif)
 
 
-This X-VideoPlayer features a video player with a list of videos fetched from an API. The app supports full-screen playback, video previews, and dynamic updating of the currently playing video based on visibility. inspired by the video player from X but still has some minor bugs. 
+This X-VideoPlayer features a video player with a list of videos fetched from an API. The app supports full-screen playback, video previews, and dynamic updating of the currently playing video based on visibility. inspired by the video player from X . 
 
 Features
 Video List: Displays a list of videos with user information.
@@ -43,4 +43,5 @@ AVKit and AVFoundation: For video playback.
 Combine: For state management.
 
 License and Contribution
-This project  is offered as-is and is open for use by any developer. Contributions are welcome—feel free to fork the repository and submit pull requests if you would like to enhance the project.
+This project  is offered as-is and is open for use by any developer. 
+Contributions are welcome—feel free to fork the repository and submit pull requests if you would like to enhance the project.
